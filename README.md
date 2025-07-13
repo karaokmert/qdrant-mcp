@@ -34,7 +34,7 @@ uvx --with sentence-transformers qdrant-mcp
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/qdrant-mcp.git
+git clone https://github.com/andrewlwn77/qdrant-mcp.git
 cd qdrant-mcp
 
 # Basic install (OpenAI embeddings only)

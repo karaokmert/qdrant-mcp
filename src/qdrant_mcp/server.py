@@ -4,26 +4,50 @@ import json
 import logging
 import asyncio
 from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
 
-from mcp import FastMCP
-from mcp.types import (
-    Tool,
-    TextContent,
-)
+from mcp.server import FastMCP
 
-from .settings import get_settings
-from .qdrant_client import QdrantMemoryClient
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from qdrant_mcp.settings import get_settings
+from qdrant_mcp.qdrant_memory import QdrantMemoryClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize settings and MCP
-settings = get_settings()
-mcp = FastMCP(settings.server_name)
-
 # Initialize Qdrant client (will be created on startup)
 qdrant_client: Optional[QdrantMemoryClient] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastMCP):
+    """Manage the lifecycle of the Qdrant client."""
+    global qdrant_client
+    try:
+        # Startup
+        settings = get_settings()
+        qdrant_client = QdrantMemoryClient(settings)
+        logger.info("Qdrant MCP server initialized")
+        logger.info(f"Qdrant URL: {settings.qdrant_url}")
+        logger.info(f"Collection: {settings.collection_name}")
+        logger.info(f"Embedding: {settings.embedding_provider} / {settings.embedding_model}")
+        yield
+    except Exception as e:
+        logger.error(f"Failed to initialize Qdrant client: {e}")
+        raise
+    finally:
+        # Shutdown
+        if qdrant_client:
+            await qdrant_client.close()
+            logger.info("Qdrant client closed")
+
+
+# Initialize MCP with lifespan
+mcp = FastMCP("qdrant-mcp", lifespan=lifespan)
 
 
 @mcp.tool()
@@ -155,35 +179,8 @@ async def qdrant_collection_info() -> Dict[str, Any]:
     return qdrant_client.get_collection_info()
 
 
-# Server lifecycle handlers
-async def startup():
-    """Initialize Qdrant client on server startup."""
-    global qdrant_client
-    try:
-        qdrant_client = QdrantMemoryClient(settings)
-        logger.info(f"Connected to Qdrant at {settings.qdrant_url}")
-        logger.info(f"Using collection: {settings.collection_name}")
-        logger.info(f"Embedding provider: {settings.embedding_provider}")
-        logger.info(f"Embedding model: {settings.embedding_model}")
-    except Exception as e:
-        logger.error(f"Failed to initialize Qdrant client: {e}")
-        raise
-
-
-async def shutdown():
-    """Cleanup on server shutdown."""
-    global qdrant_client
-    if qdrant_client:
-        await qdrant_client.close()
-        logger.info("Qdrant client closed")
-
-
 def main():
     """Main entry point for the MCP server."""
-    # Register lifecycle handlers
-    mcp.add_startup_handler(startup)
-    mcp.add_shutdown_handler(shutdown)
-    
     # Run the server
     mcp.run()
 

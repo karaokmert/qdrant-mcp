@@ -33,6 +33,7 @@ class QdrantMemoryClient:
         self.client = QdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key,
+            timeout=10.0,  # Add timeout
         )
         
         # Create embedding provider
@@ -43,23 +44,30 @@ class QdrantMemoryClient:
             device=settings.device,
         )
         
-        # Initialize collection
-        self._init_collection()
+        # Initialize collection flag
+        self._collection_initialized = False
     
-    def _init_collection(self) -> None:
-        """Initialize or verify the collection exists."""
-        collections = self.client.get_collections().collections
-        collection_names = [c.name for c in collections]
-        
-        if self.settings.collection_name not in collection_names:
-            # Create collection with appropriate vector size
-            self.client.create_collection(
-                collection_name=self.settings.collection_name,
-                vectors_config=VectorParams(
-                    size=self.embedding_provider.dimensions,
-                    distance=Distance.COSINE,
+    def _ensure_collection(self) -> None:
+        """Ensure the collection exists (lazy initialization)."""
+        if self._collection_initialized:
+            return
+            
+        try:
+            collections = self.client.get_collections().collections
+            collection_names = [c.name for c in collections]
+            
+            if self.settings.collection_name not in collection_names:
+                # Create collection with appropriate vector size
+                self.client.create_collection(
+                    collection_name=self.settings.collection_name,
+                    vectors_config=VectorParams(
+                        size=self.embedding_provider.dimensions,
+                        distance=Distance.COSINE,
                 ),
             )
+            self._collection_initialized = True
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Qdrant collection: {e}")
     
     async def store(
         self,
@@ -77,6 +85,9 @@ class QdrantMemoryClient:
         Returns:
             ID of the stored point
         """
+        # Ensure collection exists
+        self._ensure_collection()
+        
         # Generate ID if not provided
         point_id = id or str(uuid.uuid4())
         
@@ -127,6 +138,9 @@ class QdrantMemoryClient:
         Returns:
             List of search results with content and metadata
         """
+        # Ensure collection exists
+        self._ensure_collection()
+        
         # Use defaults from settings if not provided
         limit = limit or self.settings.default_limit
         score_threshold = score_threshold or self.settings.score_threshold
@@ -184,6 +198,9 @@ class QdrantMemoryClient:
         Returns:
             Operation result
         """
+        # Ensure collection exists
+        self._ensure_collection()
+        
         self.client.delete(
             collection_name=self.settings.collection_name,
             points_selector=ids,

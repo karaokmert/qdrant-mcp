@@ -1,6 +1,7 @@
 """Sentence Transformers embeddings provider implementation."""
 
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
+
 from .base import EmbeddingProvider
 
 if TYPE_CHECKING:
@@ -19,7 +20,6 @@ Or if using uvx:
 """
 
 try:
-    import numpy as np
     from sentence_transformers import SentenceTransformer
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
@@ -35,7 +35,7 @@ class SentenceTransformersEmbeddingProvider(EmbeddingProvider):
         "all-mpnet-base-v2": 768,
     }
     
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: Optional[str] = None):
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2", device: str | None = None):
         """Initialize Sentence Transformers embedding provider.
         
         Args:
@@ -58,7 +58,7 @@ class SentenceTransformersEmbeddingProvider(EmbeddingProvider):
         
         super().__init__(model_name, dimensions)
     
-    async def embed_text(self, text: str) -> List[float]:
+    async def embed_text(self, text: str) -> list[float]:
         """Embed a single text using Sentence Transformers.
         
         Args:
@@ -71,7 +71,7 @@ class SentenceTransformersEmbeddingProvider(EmbeddingProvider):
         embedding = self.model.encode(text, convert_to_numpy=True)
         return embedding.tolist()
     
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts using Sentence Transformers.
         
         Args:

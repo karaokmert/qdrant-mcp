@@ -2,25 +2,24 @@
 
 import json
 import logging
-import asyncio
-from typing import Any, Dict, List, Optional
+import os
+import sys
 from contextlib import asynccontextmanager
+from typing import Any
 
 from mcp.server import FastMCP
 
-import sys
-import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from qdrant_mcp.settings import get_settings
 from qdrant_mcp.qdrant_memory import QdrantMemoryClient
+from qdrant_mcp.settings import get_settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Qdrant client (will be created on startup)
-qdrant_client: Optional[QdrantMemoryClient] = None
+qdrant_client: QdrantMemoryClient | None = None
 
 
 @asynccontextmanager
@@ -51,7 +50,7 @@ mcp = FastMCP("qdrant-mcp", lifespan=lifespan)
 
 
 @mcp.tool()
-async def qdrant_store(content: str, metadata: Optional[str] = None, id: Optional[str] = None) -> str:
+async def qdrant_store(content: str, metadata: str | None = None, id: str | None = None) -> str:
     """Store information in Qdrant with semantic embeddings.
     
     Args:
@@ -87,10 +86,10 @@ async def qdrant_store(content: str, metadata: Optional[str] = None, id: Optiona
 @mcp.tool()
 async def qdrant_find(
     query: str,
-    limit: Optional[int] = None,
-    filter: Optional[str] = None,
-    score_threshold: Optional[float] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None,
+    filter: str | None = None,
+    score_threshold: float | None = None
+) -> list[dict[str, Any]]:
     """Find relevant information using semantic search.
     
     Args:
@@ -126,7 +125,7 @@ async def qdrant_find(
 
 
 @mcp.tool()
-async def qdrant_delete(ids: str) -> Dict[str, Any]:
+async def qdrant_delete(ids: str) -> dict[str, Any]:
     """Delete items from Qdrant by their IDs.
     
     Args:
@@ -152,7 +151,7 @@ async def qdrant_delete(ids: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def qdrant_list_collections() -> List[str]:
+async def qdrant_list_collections() -> list[str]:
     """List all collections in the Qdrant database.
     
     Returns:
@@ -162,11 +161,11 @@ async def qdrant_list_collections() -> List[str]:
     if not qdrant_client:
         raise RuntimeError("Qdrant client not initialized")
     
-    return qdrant_client.list_collections()
+    return await qdrant_client.list_collections()
 
 
 @mcp.tool()
-async def qdrant_collection_info() -> Dict[str, Any]:
+async def qdrant_collection_info() -> dict[str, Any]:
     """Get information about the current collection.
     
     Returns:
@@ -176,7 +175,7 @@ async def qdrant_collection_info() -> Dict[str, Any]:
     if not qdrant_client:
         raise RuntimeError("Qdrant client not initialized")
     
-    return qdrant_client.get_collection_info()
+    return await qdrant_client.get_collection_info()
 
 
 def main():

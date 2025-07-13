@@ -1,7 +1,7 @@
 """Base class for embedding providers."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import Any
 
 
 class EmbeddingProvider(ABC):
@@ -18,7 +18,7 @@ class EmbeddingProvider(ABC):
         self.dimensions = dimensions
     
     @abstractmethod
-    async def embed_text(self, text: str) -> List[float]:
+    async def embed_text(self, text: str) -> list[float]:
         """Embed a single text string.
         
         Args:
@@ -30,7 +30,7 @@ class EmbeddingProvider(ABC):
         pass
     
     @abstractmethod
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts in batch.
         
         Args:
@@ -47,7 +47,7 @@ class EmbeddingProvider(ABC):
         """Get the name of the embedding provider."""
         pass
     
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> dict[str, Any]:
         """Get information about the embedding model.
         
         Returns:

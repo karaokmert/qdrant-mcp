@@ -1,6 +1,7 @@
 """Settings management for Qdrant MCP server."""
 
-from typing import Optional, Literal
+from typing import Literal
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
         default="http://localhost:6333",
         description="URL of the Qdrant server"
     )
-    qdrant_api_key: Optional[str] = Field(
+    qdrant_api_key: str | None = Field(
         default=None,
         description="API key for Qdrant (optional)"
     )
@@ -40,13 +41,13 @@ class Settings(BaseSettings):
     )
     
     # OpenAI settings (optional, used when provider is "openai")
-    openai_api_key: Optional[str] = Field(
+    openai_api_key: str | None = Field(
         default=None,
         description="OpenAI API key (required for OpenAI embeddings)"
     )
     
     # Sentence Transformers settings (optional)
-    device: Optional[str] = Field(
+    device: str | None = Field(
         default=None,
         description="Device to run sentence transformers on (cpu, cuda, etc.)"
     )
@@ -105,7 +106,7 @@ class Settings(BaseSettings):
     
     @field_validator("openai_api_key")
     @classmethod
-    def validate_openai_api_key(cls, v: Optional[str], info) -> Optional[str]:
+    def validate_openai_api_key(cls, v: str | None, info) -> str | None:
         """Validate OpenAI API key is provided when using OpenAI provider."""
         provider = info.data.get("embedding_provider", "openai")
         

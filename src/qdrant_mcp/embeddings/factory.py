@@ -1,12 +1,13 @@
 """Factory for creating embedding providers."""
 
-from typing import Optional, Dict, Any
+from typing import Any
+
 from .base import EmbeddingProvider
 from .openai import OpenAIEmbeddingProvider
 from .sentence_transformers import (
-    SentenceTransformersEmbeddingProvider,
+    IMPORT_ERROR_MSG,
     SENTENCE_TRANSFORMERS_AVAILABLE,
-    IMPORT_ERROR_MSG
+    SentenceTransformersEmbeddingProvider,
 )
 
 
@@ -49,7 +50,7 @@ def create_embedding_provider(
         )
 
 
-def get_supported_models() -> Dict[str, Dict[str, Any]]:
+def get_supported_models() -> dict[str, dict[str, Any]]:
     """Get information about all supported models.
     
     Returns:

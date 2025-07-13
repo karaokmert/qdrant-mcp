@@ -1,22 +1,20 @@
 """Qdrant client wrapper with embedding support."""
 
 import uuid
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import Any
 
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
-    VectorParams,
-    PointStruct,
-    Filter,
     FieldCondition,
+    Filter,
     MatchValue,
-    SearchRequest,
-    ScoredPoint,
+    PointStruct,
+    VectorParams,
 )
 
-from .embeddings import EmbeddingProvider, create_embedding_provider
+from .embeddings import create_embedding_provider
 from .settings import Settings
 
 
@@ -30,11 +28,31 @@ class QdrantMemoryClient:
             settings: Application settings
         """
         self.settings = settings
-        self.client = QdrantClient(
-            url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key,
-            timeout=10.0,  # Add timeout
-        )
+        # Parse URL to extract host and port
+        from urllib.parse import urlparse
+        parsed_url = urlparse(settings.qdrant_url)
+        host = parsed_url.hostname
+        port = parsed_url.port
+        https = parsed_url.scheme == "https"
+        
+        # Use host/port parameters instead of URL for better compatibility
+        if host:
+            self.client = AsyncQdrantClient(
+                host=host,
+                port=port or (443 if https else 6333),
+                https=https,
+                api_key=settings.qdrant_api_key,
+                timeout=30.0,  # Increased timeout for remote server
+                prefer_grpc=False,  # Use REST API for better HTTPS support
+            )
+        else:
+            # Fallback to URL parameter
+            self.client = AsyncQdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key,
+                timeout=30.0,  # Increased timeout for remote server
+                prefer_grpc=False,  # Use REST API for better HTTPS support
+            )
         
         # Create embedding provider
         self.embedding_provider = create_embedding_provider(
@@ -47,18 +65,18 @@ class QdrantMemoryClient:
         # Initialize collection flag
         self._collection_initialized = False
     
-    def _ensure_collection(self) -> None:
+    async def _ensure_collection(self) -> None:
         """Ensure the collection exists (lazy initialization)."""
         if self._collection_initialized:
             return
             
         try:
-            collections = self.client.get_collections().collections
-            collection_names = [c.name for c in collections]
+            collections = await self.client.get_collections()
+            collection_names = [c.name for c in collections.collections]
             
             if self.settings.collection_name not in collection_names:
                 # Create collection with appropriate vector size
-                self.client.create_collection(
+                await self.client.create_collection(
                     collection_name=self.settings.collection_name,
                     vectors_config=VectorParams(
                         size=self.embedding_provider.dimensions,
@@ -72,8 +90,8 @@ class QdrantMemoryClient:
     async def store(
         self,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        id: Optional[str] = None
+        metadata: dict[str, Any] | None = None,
+        id: str | None = None
     ) -> str:
         """Store content with embeddings in Qdrant.
         
@@ -86,7 +104,7 @@ class QdrantMemoryClient:
             ID of the stored point
         """
         # Ensure collection exists
-        self._ensure_collection()
+        await self._ensure_collection()
         
         # Generate ID if not provided
         point_id = id or str(uuid.uuid4())
@@ -113,7 +131,7 @@ class QdrantMemoryClient:
         )
         
         # Upsert to Qdrant
-        self.client.upsert(
+        await self.client.upsert(
             collection_name=self.settings.collection_name,
             points=[point],
         )
@@ -123,10 +141,10 @@ class QdrantMemoryClient:
     async def find(
         self,
         query: str,
-        limit: Optional[int] = None,
-        filter: Optional[Dict[str, Any]] = None,
-        score_threshold: Optional[float] = None
-    ) -> List[Dict[str, Any]]:
+        limit: int | None = None,
+        filter: dict[str, Any] | None = None,
+        score_threshold: float | None = None
+    ) -> list[dict[str, Any]]:
         """Find similar content using semantic search.
         
         Args:
@@ -139,7 +157,7 @@ class QdrantMemoryClient:
             List of search results with content and metadata
         """
         # Ensure collection exists
-        self._ensure_collection()
+        await self._ensure_collection()
         
         # Use defaults from settings if not provided
         limit = limit or self.settings.default_limit
@@ -163,7 +181,7 @@ class QdrantMemoryClient:
                 search_filter = Filter(must=conditions)
         
         # Search
-        results = self.client.search(
+        results = await self.client.search(
             collection_name=self.settings.collection_name,
             query_vector=query_embedding,
             limit=limit,
@@ -189,7 +207,7 @@ class QdrantMemoryClient:
         
         return formatted_results
     
-    async def delete(self, ids: List[str]) -> Dict[str, Any]:
+    async def delete(self, ids: list[str]) -> dict[str, Any]:
         """Delete points by IDs.
         
         Args:
@@ -199,9 +217,9 @@ class QdrantMemoryClient:
             Operation result
         """
         # Ensure collection exists
-        self._ensure_collection()
+        await self._ensure_collection()
         
-        self.client.delete(
+        await self.client.delete(
             collection_name=self.settings.collection_name,
             points_selector=ids,
         )
@@ -211,22 +229,25 @@ class QdrantMemoryClient:
             "ids": ids,
         }
     
-    def list_collections(self) -> List[str]:
+    async def list_collections(self) -> list[str]:
         """List all collections in Qdrant.
         
         Returns:
             List of collection names
         """
-        collections = self.client.get_collections().collections
-        return [c.name for c in collections]
+        collections = await self.client.get_collections()
+        return [c.name for c in collections.collections]
     
-    def get_collection_info(self) -> Dict[str, Any]:
+    async def get_collection_info(self) -> dict[str, Any]:
         """Get information about the current collection.
         
         Returns:
             Collection information
         """
-        info = self.client.get_collection(self.settings.collection_name)
+        # Ensure collection exists
+        await self._ensure_collection()
+        
+        info = await self.client.get_collection(self.settings.collection_name)
         return {
             "name": self.settings.collection_name,
             "vectors_count": info.vectors_count,
@@ -239,4 +260,4 @@ class QdrantMemoryClient:
         """Close connections and cleanup."""
         if hasattr(self.embedding_provider, "close"):
             await self.embedding_provider.close()
-        self.client.close()
+        await self.client.close()

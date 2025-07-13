@@ -1,8 +1,9 @@
 """OpenAI embeddings provider implementation."""
 
 import os
-from typing import List, Optional
+
 import httpx
+
 from .base import EmbeddingProvider
 
 
@@ -16,7 +17,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         "text-embedding-ada-002": 1536,
     }
     
-    def __init__(self, model_name: str = "text-embedding-3-small", api_key: Optional[str] = None):
+    def __init__(self, model_name: str = "text-embedding-3-small", api_key: str | None = None):
         """Initialize OpenAI embedding provider.
         
         Args:
@@ -40,7 +41,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             }
         )
     
-    async def embed_text(self, text: str) -> List[float]:
+    async def embed_text(self, text: str) -> list[float]:
         """Embed a single text using OpenAI API.
         
         Args:
@@ -52,7 +53,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         embeddings = await self.embed_batch([text])
         return embeddings[0]
     
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple texts using OpenAI API.
         
         Args:

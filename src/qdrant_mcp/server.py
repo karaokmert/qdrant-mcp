@@ -32,7 +32,7 @@ async def lifespan(app: FastMCP):
         qdrant_client = QdrantMemoryClient(settings)
         logger.info("Qdrant MCP server initialized")
         logger.info(f"Qdrant URL: {settings.qdrant_url}")
-        logger.info(f"Collection: {settings.collection_name}")
+        logger.info(f"Default Collection: {settings.default_collection_name}")
         logger.info(f"Embedding: {settings.embedding_provider} / {settings.embedding_model}")
         yield
     except Exception as e:
@@ -50,13 +50,14 @@ mcp = FastMCP("qdrant-mcp", lifespan=lifespan)
 
 
 @mcp.tool()
-async def qdrant_store(content: str, metadata: str | None = None, id: str | None = None) -> str:
+async def qdrant_store(content: str, metadata: str | None = None, id: str | None = None, collection_name: str | None = None) -> str:
     """Store information in Qdrant with semantic embeddings.
     
     Args:
         content: The text content to store
         metadata: Optional JSON string with metadata
         id: Optional ID for the stored item
+        collection_name: Optional collection name (uses default if not provided)
         
     Returns:
         ID of the stored item
@@ -74,13 +75,14 @@ async def qdrant_store(content: str, metadata: str | None = None, id: str | None
             raise ValueError("Metadata must be valid JSON")
     
     # Store in Qdrant
-    point_id = await qdrant_client.store(
+    result = await qdrant_client.store(
         content=content,
         metadata=metadata_dict,
-        id=id
+        id=id,
+        collection_name=collection_name
     )
     
-    return f"Stored successfully with ID: {point_id}"
+    return f"Stored successfully in collection '{result['collection']}' with ID: {result['id']}"
 
 
 @mcp.tool()
@@ -88,7 +90,8 @@ async def qdrant_find(
     query: str,
     limit: int | None = None,
     filter: str | None = None,
-    score_threshold: float | None = None
+    score_threshold: float | None = None,
+    collection_name: str | None = None
 ) -> list[dict[str, Any]]:
     """Find relevant information using semantic search.
     
@@ -97,6 +100,7 @@ async def qdrant_find(
         limit: Maximum number of results to return
         filter: Optional JSON string with filter conditions
         score_threshold: Minimum similarity score (0-1)
+        collection_name: Optional collection name (uses default if not provided)
         
     Returns:
         List of matching results with content and metadata
@@ -118,18 +122,20 @@ async def qdrant_find(
         query=query,
         limit=limit,
         filter=filter_dict,
-        score_threshold=score_threshold
+        score_threshold=score_threshold,
+        collection_name=collection_name
     )
     
     return results
 
 
 @mcp.tool()
-async def qdrant_delete(ids: str) -> dict[str, Any]:
+async def qdrant_delete(ids: str, collection_name: str | None = None) -> dict[str, Any]:
     """Delete items from Qdrant by their IDs.
     
     Args:
         ids: Comma-separated list of IDs to delete
+        collection_name: Optional collection name (uses default if not provided)
         
     Returns:
         Deletion result
@@ -145,7 +151,7 @@ async def qdrant_delete(ids: str) -> dict[str, Any]:
         raise ValueError("No IDs provided")
     
     # Delete from Qdrant
-    result = await qdrant_client.delete(id_list)
+    result = await qdrant_client.delete(id_list, collection_name=collection_name)
     
     return result
 
@@ -165,8 +171,11 @@ async def qdrant_list_collections() -> list[str]:
 
 
 @mcp.tool()
-async def qdrant_collection_info() -> dict[str, Any]:
-    """Get information about the current collection.
+async def qdrant_collection_info(collection_name: str | None = None) -> dict[str, Any]:
+    """Get information about a collection.
+    
+    Args:
+        collection_name: Optional collection name (uses default if not provided)
     
     Returns:
         Collection statistics and configuration
@@ -175,7 +184,7 @@ async def qdrant_collection_info() -> dict[str, Any]:
     if not qdrant_client:
         raise RuntimeError("Qdrant client not initialized")
     
-    return await qdrant_client.get_collection_info()
+    return await qdrant_client.get_collection_info(collection_name=collection_name)
 
 
 def main():

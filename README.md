@@ -4,12 +4,13 @@ A Model Context Protocol (MCP) server that provides semantic memory capabilities
 
 ## Features
 
+- **Dynamic Collection Management**: Work with multiple collections from a single server instance
 - **Multiple Embedding Providers**:
   - OpenAI (text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002)
   - Sentence Transformers (all-MiniLM-L6-v2, all-mpnet-base-v2, and more)
 - **Semantic Search**: Store and retrieve information using vector similarity
 - **Flexible Configuration**: Environment variables for all settings
-- **MCP Tools**: Store, find, delete, and list operations
+- **MCP Tools**: Store, find, delete, and list operations with collection support
 - **Metadata Support**: Attach custom metadata to stored content
 
 ## Installation
@@ -58,7 +59,7 @@ The server can be configured using environment variables:
 
 - `QDRANT_URL`: Qdrant server URL (default: `http://localhost:6333`)
 - `QDRANT_API_KEY`: Qdrant API key (optional)
-- `COLLECTION_NAME`: Qdrant collection name (default: `mcp_memory`)
+- `DEFAULT_COLLECTION_NAME`: Default Qdrant collection name (default: `mcp_memory`)
 - `DEVICE`: Device for sentence transformers (default: auto-detect)
 - `DEFAULT_LIMIT`: Default search results limit (default: 10)
 - `SCORE_THRESHOLD`: Minimum similarity score (default: 0.0)
@@ -90,6 +91,27 @@ export EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 ## Usage
 
+### Dynamic Collections
+
+The server supports working with multiple collections dynamically. You can:
+- Store data in different collections by specifying `collection_name` in each request
+- Query specific collections for targeted searches
+- Manage multiple agents or contexts with separate memory spaces
+- Use a single server instance for all collections (efficient resource usage)
+
+Example workflow:
+```python
+# Store in agent-specific collections
+qdrant_store("Clara's memory", collection_name="clara-agent")
+qdrant_store("Assistant's data", collection_name="assistant-agent")
+
+# Search in specific collections
+qdrant_find("previous conversations", collection_name="clara-agent")
+
+# Use default collection when not specified
+qdrant_store("General information")  # Uses DEFAULT_COLLECTION_NAME
+```
+
 ### Starting the Server
 
 ```bash
@@ -102,15 +124,19 @@ mcp dev src/qdrant_mcp/server.py
 
 ### MCP Tools
 
+All tools support an optional `collection_name` parameter for dynamic collection management. If not specified, the default collection will be used.
+
 #### qdrant-store
 Store content with semantic embeddings:
 ```json
 {
   "content": "The capital of France is Paris",
   "metadata": "{\"category\": \"geography\", \"type\": \"fact\"}",
-  "id": "optional-custom-id"
+  "id": "optional-custom-id",
+  "collection_name": "optional-collection-name"
 }
 ```
+Response includes the collection name: `"Stored successfully in collection 'geography' with ID: xxx"`
 
 #### qdrant-find
 Search for relevant information:
@@ -119,17 +145,21 @@ Search for relevant information:
   "query": "What is the capital of France?",
   "limit": 5,
   "filter": "{\"category\": \"geography\"}",
-  "score_threshold": 0.7
+  "score_threshold": 0.7,
+  "collection_name": "optional-collection-name"
 }
 ```
+Each result includes the collection name in the response.
 
 #### qdrant-delete
 Delete stored items:
 ```json
 {
-  "ids": "id1,id2,id3"
+  "ids": "id1,id2,id3",
+  "collection_name": "optional-collection-name"
 }
 ```
+Response includes the collection name.
 
 #### qdrant-list-collections
 List all collections in Qdrant:
@@ -138,10 +168,13 @@ List all collections in Qdrant:
 ```
 
 #### qdrant-collection-info
-Get information about the current collection:
+Get information about a specific collection:
 ```json
-{}
+{
+  "collection_name": "optional-collection-name"
+}
 ```
+If collection_name is not provided, returns info about the default collection.
 
 ## Integration with Claude Desktop
 

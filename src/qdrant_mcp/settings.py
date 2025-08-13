@@ -25,9 +25,9 @@ class Settings(BaseSettings):
         default=None,
         description="API key for Qdrant (optional)"
     )
-    collection_name: str = Field(
+    default_collection_name: str = Field(
         default="mcp_memory",
-        description="Name of the Qdrant collection to use"
+        description="Default Qdrant collection name to use when not specified"
     )
     
     # Embedding settings

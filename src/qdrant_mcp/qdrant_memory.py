@@ -62,49 +62,58 @@ class QdrantMemoryClient:
             device=settings.device,
         )
         
-        # Initialize collection flag
-        self._collection_initialized = False
+        # Track initialized collections
+        self._initialized_collections = set()
     
-    async def _ensure_collection(self) -> None:
-        """Ensure the collection exists (lazy initialization)."""
-        if self._collection_initialized:
+    async def _ensure_collection(self, collection_name: str) -> None:
+        """Ensure the collection exists (lazy initialization).
+        
+        Args:
+            collection_name: Name of the collection to ensure exists
+        """
+        if collection_name in self._initialized_collections:
             return
             
         try:
             collections = await self.client.get_collections()
             collection_names = [c.name for c in collections.collections]
             
-            if self.settings.collection_name not in collection_names:
+            if collection_name not in collection_names:
                 # Create collection with appropriate vector size
                 await self.client.create_collection(
-                    collection_name=self.settings.collection_name,
+                    collection_name=collection_name,
                     vectors_config=VectorParams(
                         size=self.embedding_provider.dimensions,
                         distance=Distance.COSINE,
                 ),
             )
-            self._collection_initialized = True
+            self._initialized_collections.add(collection_name)
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize Qdrant collection: {e}")
+            raise RuntimeError(f"Failed to initialize Qdrant collection '{collection_name}': {e}")
     
     async def store(
         self,
         content: str,
         metadata: dict[str, Any] | None = None,
-        id: str | None = None
-    ) -> str:
+        id: str | None = None,
+        collection_name: str | None = None
+    ) -> dict[str, str]:
         """Store content with embeddings in Qdrant.
         
         Args:
             content: Text content to store
             metadata: Optional metadata to attach
             id: Optional ID for the point (generated if not provided)
+            collection_name: Optional collection name (uses default if not provided)
             
         Returns:
-            ID of the stored point
+            Dictionary with ID and collection name of the stored point
         """
+        # Determine target collection
+        target_collection = collection_name or self.settings.default_collection_name
+        
         # Ensure collection exists
-        await self._ensure_collection()
+        await self._ensure_collection(target_collection)
         
         # Generate ID if not provided
         point_id = id or str(uuid.uuid4())
@@ -132,18 +141,22 @@ class QdrantMemoryClient:
         
         # Upsert to Qdrant
         await self.client.upsert(
-            collection_name=self.settings.collection_name,
+            collection_name=target_collection,
             points=[point],
         )
         
-        return point_id
+        return {
+            "id": point_id,
+            "collection": target_collection
+        }
     
     async def find(
         self,
         query: str,
         limit: int | None = None,
         filter: dict[str, Any] | None = None,
-        score_threshold: float | None = None
+        score_threshold: float | None = None,
+        collection_name: str | None = None
     ) -> list[dict[str, Any]]:
         """Find similar content using semantic search.
         
@@ -152,12 +165,16 @@ class QdrantMemoryClient:
             limit: Number of results to return
             filter: Optional filter conditions
             score_threshold: Minimum score threshold
+            collection_name: Optional collection name (uses default if not provided)
             
         Returns:
             List of search results with content and metadata
         """
+        # Determine target collection
+        target_collection = collection_name or self.settings.default_collection_name
+        
         # Ensure collection exists
-        await self._ensure_collection()
+        await self._ensure_collection(target_collection)
         
         # Use defaults from settings if not provided
         limit = limit or self.settings.default_limit
@@ -182,7 +199,7 @@ class QdrantMemoryClient:
         
         # Search
         results = await self.client.search(
-            collection_name=self.settings.collection_name,
+            collection_name=target_collection,
             query_vector=query_embedding,
             limit=limit,
             query_filter=search_filter,
@@ -202,31 +219,37 @@ class QdrantMemoryClient:
                 "metadata": result.payload.get("metadata", {}),
                 "embedding_model": result.payload.get("embedding_model", ""),
                 "embedding_provider": result.payload.get("embedding_provider", ""),
+                "collection": target_collection,
             }
             formatted_results.append(formatted_result)
         
         return formatted_results
     
-    async def delete(self, ids: list[str]) -> dict[str, Any]:
+    async def delete(self, ids: list[str], collection_name: str | None = None) -> dict[str, Any]:
         """Delete points by IDs.
         
         Args:
             ids: List of point IDs to delete
+            collection_name: Optional collection name (uses default if not provided)
             
         Returns:
             Operation result
         """
+        # Determine target collection
+        target_collection = collection_name or self.settings.default_collection_name
+        
         # Ensure collection exists
-        await self._ensure_collection()
+        await self._ensure_collection(target_collection)
         
         await self.client.delete(
-            collection_name=self.settings.collection_name,
+            collection_name=target_collection,
             points_selector=ids,
         )
         
         return {
             "deleted": len(ids),
             "ids": ids,
+            "collection": target_collection,
         }
     
     async def list_collections(self) -> list[str]:
@@ -238,18 +261,24 @@ class QdrantMemoryClient:
         collections = await self.client.get_collections()
         return [c.name for c in collections.collections]
     
-    async def get_collection_info(self) -> dict[str, Any]:
-        """Get information about the current collection.
+    async def get_collection_info(self, collection_name: str | None = None) -> dict[str, Any]:
+        """Get information about a collection.
+        
+        Args:
+            collection_name: Optional collection name (uses default if not provided)
         
         Returns:
             Collection information
         """
-        # Ensure collection exists
-        await self._ensure_collection()
+        # Determine target collection
+        target_collection = collection_name or self.settings.default_collection_name
         
-        info = await self.client.get_collection(self.settings.collection_name)
+        # Ensure collection exists
+        await self._ensure_collection(target_collection)
+        
+        info = await self.client.get_collection(target_collection)
         return {
-            "name": self.settings.collection_name,
+            "name": target_collection,
             "vectors_count": info.vectors_count,
             "points_count": info.points_count,
             "vector_size": info.config.params.vectors.size,

@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from mcp.server import FastMCP
 
@@ -23,7 +23,7 @@ qdrant_client: QdrantMemoryClient | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastMCP):
+async def lifespan(app: FastMCP) -> AsyncGenerator[None, None]:
     """Manage the lifecycle of the Qdrant client."""
     global qdrant_client
     try:
@@ -50,12 +50,12 @@ mcp = FastMCP("qdrant-mcp", lifespan=lifespan)
 
 
 @mcp.tool()
-async def qdrant_store(content: str, metadata: str | None = None, id: str | None = None, collection_name: str | None = None) -> str:
+async def qdrant_store(content: str, metadata: str | dict[str, Any] | None = None, id: str | None = None, collection_name: str | None = None) -> str:
     """Store information in Qdrant with semantic embeddings.
     
     Args:
         content: The text content to store
-        metadata: Optional JSON string with metadata
+        metadata: Optional metadata as JSON string or dict
         id: Optional ID for the stored item
         collection_name: Optional collection name (uses default if not provided)
         
@@ -66,13 +66,32 @@ async def qdrant_store(content: str, metadata: str | None = None, id: str | None
     if not qdrant_client:
         raise RuntimeError("Qdrant client not initialized")
     
-    # Parse metadata if provided
+    # Parse and validate metadata if provided
     metadata_dict = None
-    if metadata:
+    if metadata is not None:
         try:
-            metadata_dict = json.loads(metadata)
-        except json.JSONDecodeError:
-            raise ValueError("Metadata must be valid JSON")
+            if isinstance(metadata, dict):
+                # Validate dict can be JSON serialized
+                json.dumps(metadata)
+                metadata_dict = metadata
+            elif isinstance(metadata, str):
+                # Validate and parse JSON string
+                metadata_dict = json.loads(metadata)
+            else:
+                raise ValueError(
+                    "Metadata format error. Please provide metadata as:\n"
+                    "- JSON string: '{\"key\": \"value\"}'\n"
+                    "- Python dict: {'key': 'value'}"
+                )
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in metadata: {e}")
+        except (TypeError, ValueError) as e:
+            if "not JSON serializable" in str(e) or "Object of type" in str(e):
+                raise ValueError(
+                    f"Invalid metadata dict - contains non-serializable objects: {e}\n"
+                    "Ensure all values are JSON serializable (str, int, float, bool, list, dict)"
+                )
+            raise ValueError(f"Invalid metadata: {e}")
     
     # Store in Qdrant
     result = await qdrant_client.store(
@@ -187,7 +206,7 @@ async def qdrant_collection_info(collection_name: str | None = None) -> dict[str
     return await qdrant_client.get_collection_info(collection_name=collection_name)
 
 
-def main():
+def main() -> None:
     """Main entry point for the MCP server."""
     # Run the server
     mcp.run()

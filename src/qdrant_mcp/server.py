@@ -149,6 +149,33 @@ async def qdrant_find(
 
 
 @mcp.tool()
+async def qdrant_get(ids: str, collection_name: str | None = None) -> list[dict[str, Any]]:
+    """Retrieve records directly by their IDs (no semantic search).
+
+    Use this to follow explicit links between records: when a record's
+    metadata references related record IDs, fetch them with this tool.
+
+    Args:
+        ids: Comma-separated list of IDs to retrieve
+        collection_name: Optional collection name (uses default if not provided)
+
+    Returns:
+        List of records with content and metadata (same shape as find, without score)
+    """
+    global qdrant_client
+    if not qdrant_client:
+        raise RuntimeError("Qdrant client not initialized")
+
+    # Parse IDs
+    id_list = [id.strip() for id in ids.split(",") if id.strip()]
+
+    if not id_list:
+        raise ValueError("No IDs provided")
+
+    return await qdrant_client.get(id_list, collection_name=collection_name)
+
+
+@mcp.tool()
 async def qdrant_delete(ids: str, collection_name: str | None = None) -> dict[str, Any]:
     """Delete items from Qdrant by their IDs.
     

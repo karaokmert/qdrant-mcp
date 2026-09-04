@@ -60,6 +60,11 @@ class QdrantMemoryClient:
             model_name=settings.embedding_model,
             api_key=settings.openai_api_key,
             device=settings.device,
+            tei_url=settings.tei_url,
+            tei_api_key=settings.tei_api_key,
+            dimensions=settings.embedding_dimensions,
+            query_prefix=settings.query_prefix,
+            document_prefix=settings.document_prefix,
         )
         
         # Track initialized collections
@@ -73,12 +78,16 @@ class QdrantMemoryClient:
         """
         if collection_name in self._initialized_collections:
             return
-            
+
         try:
             collections = await self.client.get_collections()
             collection_names = [c.name for c in collections.collections]
-            
+
             if collection_name not in collection_names:
+                # Dimensions may be discovered lazily (TEI provider); probe once.
+                if self.embedding_provider.dimensions is None:
+                    await self.embedding_provider.embed_text("dimension probe")
+
                 # Create collection with appropriate vector size
                 await self.client.create_collection(
                     collection_name=collection_name,
@@ -118,8 +127,8 @@ class QdrantMemoryClient:
         # Generate ID if not provided
         point_id = id or str(uuid.uuid4())
         
-        # Generate embedding
-        embedding = await self.embedding_provider.embed_text(content)
+        # Generate embedding (document side: e5-style providers add "passage: ")
+        embedding = await self.embedding_provider.embed_document(content)
         
         # Prepare payload
         payload = {
@@ -180,8 +189,8 @@ class QdrantMemoryClient:
         limit = limit or self.settings.default_limit
         score_threshold = score_threshold or self.settings.score_threshold
         
-        # Generate query embedding
-        query_embedding = await self.embedding_provider.embed_text(query)
+        # Generate query embedding (query side: e5-style providers add "query: ")
+        query_embedding = await self.embedding_provider.embed_query(query)
         
         # Build filter if provided
         search_filter = None
@@ -197,20 +206,20 @@ class QdrantMemoryClient:
             if conditions:
                 search_filter = Filter(must=conditions)
         
-        # Search
-        results = await self.client.search(
+        # Search (query_points replaced the removed `search` API in qdrant-client >= 1.10)
+        response = await self.client.query_points(
             collection_name=target_collection,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=limit,
             query_filter=search_filter,
             score_threshold=score_threshold,
             with_payload=True,
             with_vectors=False,
         )
-        
+
         # Format results
         formatted_results = []
-        for result in results:
+        for result in response.points:
             formatted_result = {
                 "id": result.id,
                 "score": result.score,
@@ -225,6 +234,41 @@ class QdrantMemoryClient:
         
         return formatted_results
     
+    async def get(self, ids: list[str], collection_name: str | None = None) -> list[dict[str, Any]]:
+        """Retrieve points by their IDs (no semantic search).
+
+        Enables following explicit links between records: a record whose
+        metadata references related IDs can be resolved directly.
+
+        Args:
+            ids: List of point IDs to retrieve
+            collection_name: Optional collection name (uses default if not provided)
+
+        Returns:
+            List of records with content and metadata (same shape as find, without score)
+        """
+        target_collection = collection_name or self.settings.default_collection_name
+
+        records = await self.client.retrieve(
+            collection_name=target_collection,
+            ids=ids,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        results = []
+        for record in records:
+            results.append({
+                "id": record.id,
+                "content": record.payload.get("content", ""),
+                "timestamp": record.payload.get("timestamp", ""),
+                "metadata": record.payload.get("metadata", {}),
+                "embedding_model": record.payload.get("embedding_model", ""),
+                "embedding_provider": record.payload.get("embedding_provider", ""),
+                "collection": target_collection,
+            })
+        return results
+
     async def delete(self, ids: list[str], collection_name: str | None = None) -> dict[str, Any]:
         """Delete points by IDs.
         

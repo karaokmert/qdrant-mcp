@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     )
     
     # Embedding settings
-    embedding_provider: Literal["openai", "sentence-transformers"] = Field(
+    embedding_provider: Literal["openai", "sentence-transformers", "tei"] = Field(
         default="openai",
         description="Embedding provider to use"
     )
@@ -39,11 +39,33 @@ class Settings(BaseSettings):
         default="text-embedding-3-small",
         description="Embedding model name"
     )
-    
+    embedding_dimensions: int | None = Field(
+        default=None,
+        description="Embedding dimensions (optional; TEI discovers them on first use)"
+    )
+
     # OpenAI settings (optional, used when provider is "openai")
     openai_api_key: str | None = Field(
         default=None,
         description="OpenAI API key (required for OpenAI embeddings)"
+    )
+
+    # TEI settings (optional, used when provider is "tei")
+    tei_url: str | None = Field(
+        default=None,
+        description="Base URL of the self-hosted TEI server (required for TEI provider)"
+    )
+    tei_api_key: str | None = Field(
+        default=None,
+        description="API key of the TEI server (sent as Bearer token, optional)"
+    )
+    query_prefix: str | None = Field(
+        default=None,
+        description="Prefix for search queries (default: 'query: ' for e5 models, '' otherwise)"
+    )
+    document_prefix: str | None = Field(
+        default=None,
+        description="Prefix for stored documents (default: 'passage: ' for e5 models, '' otherwise)"
     )
     
     # Sentence Transformers settings (optional)

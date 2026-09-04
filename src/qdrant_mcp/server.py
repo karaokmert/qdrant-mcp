@@ -108,33 +108,46 @@ async def qdrant_store(content: str, metadata: str | dict[str, Any] | None = Non
 async def qdrant_find(
     query: str,
     limit: int | None = None,
-    filter: str | None = None,
+    filter: str | dict[str, Any] | None = None,
     score_threshold: float | None = None,
     collection_name: str | None = None
 ) -> list[dict[str, Any]]:
     """Find relevant information using semantic search.
-    
+
     Args:
         query: Search query text
         limit: Maximum number of results to return
-        filter: Optional JSON string with filter conditions
+        filter: Optional FLAT metadata filter as a dict or JSON string.
+            Keys are metadata field names, values must match exactly.
+            Example: {"tur": "kapanis"} or {"proje": "goat", "tur": "karar"}.
+            Do NOT use Qdrant's native filter syntax ({"must": [...]}) here.
         score_threshold: Minimum similarity score (0-1)
         collection_name: Optional collection name (uses default if not provided)
-        
+
     Returns:
         List of matching results with content and metadata
     """
     global qdrant_client
     if not qdrant_client:
         raise RuntimeError("Qdrant client not initialized")
-    
-    # Parse filter if provided
+
+    # Parse filter if provided (dict or JSON string)
     filter_dict = None
     if filter:
-        try:
-            filter_dict = json.loads(filter)
-        except json.JSONDecodeError:
-            raise ValueError("Filter must be valid JSON")
+        if isinstance(filter, dict):
+            filter_dict = filter
+        else:
+            try:
+                filter_dict = json.loads(filter)
+            except json.JSONDecodeError:
+                raise ValueError("Filter must be valid JSON")
+        if not isinstance(filter_dict, dict):
+            raise ValueError("Filter must be a flat object like {\"tur\": \"kapanis\"}")
+        if any(k in ("must", "should", "must_not") for k in filter_dict):
+            raise ValueError(
+                "Use a flat metadata filter like {\"tur\": \"kapanis\"} — "
+                "Qdrant native filter syntax ({\"must\": [...]}) is not accepted here."
+            )
     
     # Search in Qdrant
     results = await qdrant_client.find(

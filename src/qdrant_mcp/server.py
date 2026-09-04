@@ -7,7 +7,7 @@ import sys
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
-from mcp.server import FastMCP
+from mcp.server.fastmcp import FastMCP
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

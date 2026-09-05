@@ -159,6 +159,29 @@ class QdrantMemoryClient:
             "collection": target_collection
         }
     
+    @staticmethod
+    def _format_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """Normalize a point payload for tool output.
+
+        - Surfaces `tarih` (date) and `tur` (record type) as top-level fields so
+          consumers can order and qualify results without digging into metadata.
+        - Records written outside the MCP store flat payloads (no `metadata`
+          sub-object); their extra fields are surfaced as metadata so nothing
+          stays invisible.
+        """
+        sistem_alanlari = {"content", "timestamp", "embedding_model", "embedding_provider"}
+        meta = payload.get("metadata") or {}
+        if not meta:
+            meta = {k: v for k, v in payload.items() if k not in sistem_alanlari}
+        timestamp = payload.get("timestamp", "")
+        return {
+            "content": payload.get("content", ""),
+            "tarih": meta.get("tarih") or payload.get("tarih") or (timestamp[:10] if timestamp else ""),
+            "tur": meta.get("tur") or payload.get("tur", ""),
+            "timestamp": timestamp,
+            "metadata": meta,
+        }
+
     async def find(
         self,
         query: str,
@@ -192,10 +215,11 @@ class QdrantMemoryClient:
         # Generate query embedding (query side: e5-style providers add "query: ")
         query_embedding = await self.embedding_provider.embed_query(query)
         
-        # Build filter if provided
-        search_filter = None
+        # Build filter: caller conditions + default exclusion of invalidated
+        # records (durum=gecersiz). Invalidation lives in payload, not in the
+        # record text — text stamps are invisible to vector search (measured).
+        conditions = []
         if filter:
-            conditions = []
             for key, value in filter.items():
                 conditions.append(
                     FieldCondition(
@@ -203,8 +227,11 @@ class QdrantMemoryClient:
                         match=MatchValue(value=value),
                     )
                 )
-            if conditions:
-                search_filter = Filter(must=conditions)
+        gecersiz_disla = [
+            FieldCondition(key="metadata.durum", match=MatchValue(value="gecersiz")),
+            FieldCondition(key="durum", match=MatchValue(value="gecersiz")),
+        ]
+        search_filter = Filter(must=conditions or None, must_not=gecersiz_disla)
         
         # Search (query_points replaced the removed `search` API in qdrant-client >= 1.10)
         response = await self.client.query_points(
@@ -223,15 +250,11 @@ class QdrantMemoryClient:
             formatted_result = {
                 "id": result.id,
                 "score": result.score,
-                "content": result.payload.get("content", ""),
-                "timestamp": result.payload.get("timestamp", ""),
-                "metadata": result.payload.get("metadata", {}),
-                "embedding_model": result.payload.get("embedding_model", ""),
-                "embedding_provider": result.payload.get("embedding_provider", ""),
+                **self._format_payload(result.payload),
                 "collection": target_collection,
             }
             formatted_results.append(formatted_result)
-        
+
         return formatted_results
     
     async def get(self, ids: list[str], collection_name: str | None = None) -> list[dict[str, Any]]:
@@ -260,11 +283,7 @@ class QdrantMemoryClient:
         for record in records:
             results.append({
                 "id": record.id,
-                "content": record.payload.get("content", ""),
-                "timestamp": record.payload.get("timestamp", ""),
-                "metadata": record.payload.get("metadata", {}),
-                "embedding_model": record.payload.get("embedding_model", ""),
-                "embedding_provider": record.payload.get("embedding_provider", ""),
+                **self._format_payload(record.payload),
                 "collection": target_collection,
             })
         return results

@@ -52,7 +52,15 @@ mcp = FastMCP("qdrant-mcp", lifespan=lifespan)
 
 @mcp.tool()
 async def qdrant_store(content: str, metadata: str | dict[str, Any] | None = None, id: str | None = None, collection_name: str | None = None) -> str:
-    """Store information in Qdrant with semantic embeddings.
+    """Store one record in the organization's long-term memory.
+
+    One record = one idea, written as a short standalone verdict sentence
+    (in the language the user works in), phrased the way someone would
+    SEARCH for it later. Put the full reasoning, IDs and mechanism into
+    metadata `detay`; add `tur` (karar/kazanim/ders/tercih/kapanis),
+    `tarih` (YYYY-MM-DD) and real sources in `kaynaklar`. Before storing,
+    search for an existing record on the same topic — update/invalidate
+    instead of duplicating.
     
     Args:
         content: The text content to store
@@ -113,7 +121,16 @@ async def qdrant_find(
     score_threshold: float | None = None,
     collection_name: str | None = None
 ) -> list[dict[str, Any]]:
-    """Find relevant information using semantic search.
+    """Search the organization's long-term memory (decisions, lessons,
+    preferences, project history, session closures).
+
+    Use this tool FIRST whenever the user asks about past decisions, prior
+    work, agreements, or anything phrased like "ne karar vermiştik / ne
+    konuşmuştuk / nerede kaldık" — the answer usually predates the current
+    conversation. Results carry top-level `tarih` (date) and `tur` (record
+    type) fields: use `tarih` to order or pick the most recent record, and
+    read `metadata.detay` for the full reasoning behind a verdict.
+    Invalidated records are excluded automatically.
 
     Args:
         query: Search query text

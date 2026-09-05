@@ -1,5 +1,6 @@
 """MCP server implementation for Qdrant."""
 
+import hmac
 import json
 import logging
 import os
@@ -246,10 +247,39 @@ async def qdrant_collection_info(collection_name: str | None = None) -> dict[str
     return await qdrant_client.get_collection_info(collection_name=collection_name)
 
 
+def _bearer_guard(app, token: str):
+    """Wrap ASGI app: reject requests without the expected bearer token."""
+    async def guarded(scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers") or [])
+            auth = headers.get(b"authorization", b"").decode()
+            if not hmac.compare_digest(auth, f"Bearer {token}"):
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"content-type", b"text/plain")]})
+                await send({"type": "http.response.body", "body": b"unauthorized"})
+                return
+        await app(scope, receive, send)
+    return guarded
+
+
 def main() -> None:
     """Main entry point for the MCP server."""
-    # Run the server
-    mcp.run()
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    if transport == "streamable-http":
+        import uvicorn
+
+        app = mcp.streamable_http_app()
+        token = os.environ.get("MCP_BEARER_TOKEN", "")
+        if token:
+            app = _bearer_guard(app, token)
+        uvicorn.run(
+            app,
+            host=os.environ.get("MCP_HOST", "0.0.0.0"),
+            port=int(os.environ.get("MCP_PORT", "8000")),
+        )
+    else:
+        # Default: stdio (Claude Code and other local clients)
+        mcp.run()
 
 
 if __name__ == "__main__":

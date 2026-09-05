@@ -268,6 +268,14 @@ def main() -> None:
     if transport == "streamable-http":
         import uvicorn
 
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        # Host dogrulamasi Traefik'te (Host-bazli route) + kapi bearer'da;
+        # SDK'nin localhost-only varsayilani public domain'de 421 uretiyor.
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+
         app = mcp.streamable_http_app()
         token = os.environ.get("MCP_BEARER_TOKEN", "")
         if token:

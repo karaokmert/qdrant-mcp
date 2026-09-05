@@ -340,12 +340,15 @@ class QdrantMemoryClient:
         await self._ensure_collection(target_collection)
         
         info = await self.client.get_collection(target_collection)
+        # qdrant-client'in guncel CollectionInfo'sunda vectors_count yok
+        # (kaldirildi); indexed_vectors_count + points_count guncel karsiliklar.
         return {
             "name": target_collection,
-            "vectors_count": info.vectors_count,
+            "status": str(info.status),
             "points_count": info.points_count,
+            "indexed_vectors_count": info.indexed_vectors_count,
             "vector_size": info.config.params.vectors.size,
-            "distance": info.config.params.vectors.distance,
+            "distance": str(info.config.params.vectors.distance),
         }
     
     async def close(self) -> None:
